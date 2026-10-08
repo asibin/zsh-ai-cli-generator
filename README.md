@@ -87,7 +87,10 @@ Set it in `~/.zshrc` before the `source` line, or per call:
 ### How it works
 
 `ai` runs `claude -p` with its own system prompt and no tools, MCP servers,
-settings or session history, so each request is a single, isolated model call.
+settings, CLAUDE.md files or session history, so each request is a single,
+isolated model call. It runs in your current directory, so the model knows
+which folder "here" means; the only context it gets about that folder is its
+path and whether it's a git repository.
 The reply is structured JSON with a `command` and a `message` field
 (`--output-format json --json-schema`); the command is pushed onto the next
 prompt with `print -z`, and any message is printed above it.

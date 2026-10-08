@@ -19,7 +19,7 @@
 _AI_CMD_SYSTEM_PROMPT='You translate a natural-language request into exactly one shell command line.
 
 Environment: macOS (Darwin, BSD userland — e.g. BSD sed/date/stat, not GNU), zsh, Homebrew available.
-The command runs in the current directory of the shell, which you do not know (ignore any working directory you were told about). Use relative paths like "." for "here"/"current dir".
+The command runs in the working directory you were told about. Use relative paths like "." for "here"/"this folder".
 
 Reply with the JSON fields "command" and "message":
 - "command": ONLY the command line, exactly as it should be typed. No markdown, no backticks around it, no leading "$", no "#" comments.
@@ -44,13 +44,22 @@ _ai() {
     return 2
   fi
 
+  local dep
+  for dep in claude jq; do
+    if (( ! $+commands[$dep] )); then
+      print -u2 "ai: $dep is required but not on PATH"
+      return 1
+    fi
+  done
+
   local out err rc=1 errfile
   errfile=$(mktemp -t ai) || return 1
   print -nu2 $'\e[2mthinking…\e[0m'
   {
-    # Run from $HOME so no project CLAUDE.md/settings leak into the prompt; no tools, no MCP, no session files.
+    # Runs in the current directory so the model knows where "here" is. --setting-sources ""
+    # keeps out all settings and CLAUDE.md files; no tools, no MCP, no session files.
     # stderr goes to a file so CLI warnings never end up in the command.
-    out=$(cd ~ && claude -p \
+    out=$(claude -p \
             --model "$AI_CMD_MODEL" \
             --system-prompt "$_AI_CMD_SYSTEM_PROMPT" \
             --output-format json \
@@ -67,31 +76,25 @@ _ai() {
     rm -f $errfile
   }
 
-  local is_error detail
-  is_error=$(jq -r '.is_error' <<<$out 2>/dev/null)
+  # Parse the reply once: is_error, command, message, result as NUL-separated fields.
+  local parsed is_error cmd msg detail
+  if parsed=$(jq -j '[(.is_error | tostring), (.structured_output.command // ""),
+                      (.structured_output.message // ""), (.result // "" | tostring)]
+                     | join("\u0000")' <<<$out 2>/dev/null); then
+    local -a fields=( "${(@0)parsed}" )
+    is_error=$fields[1] cmd=$fields[2] msg=$fields[3] detail=$fields[4]
+  else
+    detail=$out   # not JSON, e.g. a plain-text CLI error
+  fi
+
   if (( rc != 0 )) || [[ $is_error != false ]]; then
-    detail=$(jq -r '.result // empty' <<<$out 2>/dev/null) || detail=$out
     print -ru2 -- "ai: claude failed (exit $rc)${detail:+: $detail}"
     [[ -n $err ]] && print -ru2 -- "$err"
     return 1
   fi
 
-  local cmd msg
-  cmd=$(jq -r '.structured_output.command // empty' <<<$out)
-  msg=$(jq -r '.structured_output.message // empty' <<<$out)
-
-  # Defensive cleanup in case the model wraps the command anyway.
-  cmd=${${cmd//$'\r'/}##[[:space:]]#}
-  cmd=${cmd#\`\`\`[[:alnum:]]#$'\n'}         # opening fence line, optional language
-  cmd=${cmd#\`\`\`}                          # inline ```cmd```
-  cmd=${${cmd%%[[:space:]]#}%\`\`\`}
+  # A leading space would hide the command from history (HIST_IGNORE_SPACE).
   cmd=${${cmd##[[:space:]]#}%%[[:space:]]#}
-  cmd=${cmd#\$[[:space:]]##}                 # leading "$ " prompt sigil
-  [[ $cmd == \`[^\`]##\` ]] && cmd=${cmd:1:-1}   # wrapped in backticks
-  # Trailing "# comment" (zsh treats # as a plain word unless INTERACTIVE_COMMENTS is set).
-  # Only when the # follows whitespace and no quote/backtick comes after it, so '#' inside quotes survives.
-  [[ $cmd == (#b)(*[^[:space:]])[[:space:]]##\#[^\'\"\`]# ]] && cmd=$match[1]
-  cmd=${${cmd##[[:space:]]#}%%[[:space:]]#}   # trim last: a leading space would hide it from history
 
   if [[ -z $cmd ]]; then
     print -ru2 -- "ai: ${msg:-empty response}"
