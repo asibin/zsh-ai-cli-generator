@@ -22,10 +22,11 @@ clear with Ctrl-C. Nothing runs until you press Enter.
 
 ### Install
 
-Add to `~/.zshrc`:
+Add **one** of these to `~/.zshrc`:
 
 ```zsh
-source ~/workspace/personal/scripts/ai.zsh
+source ~/workspace/personal/scripts/ai-widget.zsh   # key binding + the ai command
+source ~/workspace/personal/scripts/ai.zsh          # only the ai command
 ```
 
 Then open a new terminal or run `exec zsh`.
@@ -46,6 +47,23 @@ An apostrophe can't go inside single quotes. Leave it out (`ai 'whats my ip'`)
 or use double quotes (`ai "what's my ip"`).
 
 Each request takes about 3–5 seconds; a dim `thinking…` shows while it waits.
+
+### Key binding (`ai-widget.zsh`)
+
+With `ai-widget.zsh` sourced, you don't need the `ai` prefix or quotes at all:
+type the request on the command line and press **Ctrl-X Ctrl-A**. The request
+is replaced by the generated command, ready to edit or run.
+
+```
+❯ files > 100MB modified this week, what's biggest      ← press Ctrl-X Ctrl-A
+❯ find . -type f -size +100M -mtime -7 -exec stat -f '%z %N' {} + | sort -rn█
+```
+
+The shell never parses the request, so `>`, `|`, `#`, `$` and apostrophes are
+just text, and nothing can create or truncate a file by accident. Undo
+(`Ctrl-_` in emacs mode) brings the request back. If Claude can't produce a
+command, the reason shows below the line and your request stays there, so you
+can reword it. Warnings for destructive commands show below the line too.
 
 ### Examples
 
@@ -83,9 +101,10 @@ ai: A shell command can't book a flight; use an airline or a booking site like G
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AI_CMD_MODEL` | `sonnet` | Model alias passed to `claude --model` (e.g. `haiku`, `opus`) |
+| `AI_CMD_KEY` | `^X^A` | Key that runs the widget, in the emacs and viins keymaps (`ai-widget.zsh` only) |
 
-Set it in `~/.zshrc` before the `source` line, or per call:
-`AI_CMD_MODEL=opus ai …`.
+Set them in `~/.zshrc` before the `source` line. `AI_CMD_MODEL` can also be
+set per call: `AI_CMD_MODEL=opus ai …`.
 
 ### How it works
 

@@ -7,6 +7,7 @@
 # An apostrophe can't go inside single quotes: drop it (ai 'whats my ip') or use double quotes.
 #
 # Source from ~/.zshrc:   source ~/workspace/personal/scripts/ai.zsh
+# Or source ai-widget.zsh instead: it adds a key binding that needs no quoting, and loads this file.
 #
 # Config (env vars):
 #   AI_CMD_MODEL   model alias passed to `claude --model` (default: sonnet)
@@ -64,27 +65,29 @@ Command rules:
 
 _AI_CMD_SCHEMA='{"type":"object","properties":{"command":{"type":"string"},"message":{"type":"string"}},"required":["command","message"],"additionalProperties":false}'
 
-# Put the generated command on the next prompt, ready to edit or run.
-_ai() {
+# Ask Claude for one command line. Prints nothing, so the `ai` command and the ZLE widget
+# (ai-widget.zsh) can each show the result their own way.
+#   success: returns 0, REPLY=the command, reply=(warning) or ()
+#   failure: returns 1, reply=(error lines)
+_ai_generate() {
   emulate -L zsh
   setopt extended_glob
-  local query="$*"
-  if [[ -z ${query//[[:space:]]/} ]]; then
-    print -u2 "usage: ai '<describe the command you want>'"
-    return 2
-  fi
+  local query=$1
+  REPLY= reply=()
 
   local dep
   for dep in claude jq; do
     if (( ! $+commands[$dep] )); then
-      print -u2 "ai: $dep is required but not on PATH"
+      reply=("ai: $dep is required but not on PATH")
       return 1
     fi
   done
 
   local out err rc=1 errfile
-  errfile=$(mktemp "${TMPDIR:-/tmp}/ai.XXXXXX") || return 1
-  print -nu2 $'\e[2mthinking…\e[0m'
+  if ! errfile=$(mktemp "${TMPDIR:-/tmp}/ai.XXXXXX"); then
+    reply=("ai: could not create a temporary file")
+    return 1
+  fi
   {
     # Runs in the current directory so the model knows where "here" is. --setting-sources ""
     # keeps out all settings and CLAUDE.md files; no tools, no MCP, no session files.
@@ -102,8 +105,7 @@ _ai() {
     rc=$?
     err=$(<$errfile)
   } always {
-    print -nu2 $'\r\e[K'   # clear "thinking…", also on Ctrl-C
-    rm -f $errfile
+    rm -f $errfile   # also on Ctrl-C
   }
 
   # Parse the reply once: is_error, command, message, result as NUL-separated fields.
@@ -118,8 +120,7 @@ _ai() {
   fi
 
   if (( rc != 0 )) || [[ $is_error != false ]]; then
-    print -ru2 -- "ai: claude failed (exit $rc)${detail:+: $detail}"
-    [[ -n $err ]] && print -ru2 -- "$err"
+    reply=("ai: claude failed (exit $rc)${detail:+: $detail}" ${err:+"$err"})
     return 1
   fi
 
@@ -127,17 +128,42 @@ _ai() {
   cmd=${${cmd##[[:space:]]#}%%[[:space:]]#}
 
   if [[ -z $cmd ]]; then
-    print -ru2 -- "ai: ${msg:-empty response}"
+    reply=("ai: ${msg:-empty response}")
     return 1
   fi
   if [[ $cmd == *$'\n'* ]]; then
-    print -ru2 -- "ai: expected one command line, got several; not inserting:"
-    print -ru2 -- "$cmd"
+    reply=("ai: expected one command line, got several; not inserting:" "$cmd")
     return 1
   fi
 
-  [[ -n $msg ]] && print -ru2 -- $'\e[2m'"$msg"$'\e[0m'
-  print -rz -- "$cmd"
+  REPLY=$cmd
+  reply=(${msg:+"$msg"})
+}
+
+# Put the generated command on the next prompt, ready to edit or run.
+_ai() {
+  emulate -L zsh
+  local query="$*"
+  if [[ -z ${query//[[:space:]]/} ]]; then
+    print -u2 "usage: ai '<describe the command you want>'"
+    return 2
+  fi
+
+  local rc
+  print -nu2 $'\e[2mthinking…\e[0m'
+  {
+    _ai_generate "$query"
+    rc=$?
+  } always {
+    print -nu2 $'\r\e[K'   # clear "thinking…", also on Ctrl-C
+  }
+
+  if (( rc != 0 )); then
+    print -ru2 -l -- "${reply[@]}"
+    return 1
+  fi
+  (( $#reply )) && print -ru2 -- $'\e[2m'"$reply[1]"$'\e[0m'
+  print -rz -- "$REPLY"
 }
 
 # noglob so ?, * and [] in plain English aren't treated as globs.
