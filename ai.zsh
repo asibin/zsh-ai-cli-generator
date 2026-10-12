@@ -18,7 +18,7 @@
 # Single-quoted string: do not use apostrophes inside it.
 _AI_CMD_SYSTEM_PROMPT='You translate a natural-language request into exactly one shell command line.
 
-Environment: macOS (Darwin, BSD userland — e.g. BSD sed/date/stat, not GNU), zsh, Homebrew available.
+__ENVIRONMENT__
 The command runs in the working directory you were told about. Use relative paths like "." for "here"/"this folder".
 
 Reply with the JSON fields "command" and "message":
@@ -31,6 +31,36 @@ Command rules:
 - Fully satisfy the request: include the flags/formatting needed to show exactly what was asked (e.g. for "containers and their ports" use docker ps --format "table {{.Names}}\t{{.Ports}}", not bare docker ps).
 - Prefer standard, widely installed tools; prefer the safest form that does the job.
 - If the request is ambiguous, pick the most common interpretation. Never ask questions.'
+
+# Describe this machine once, at source time, so commands match the local OS and userland.
+() {
+  emulate -L zsh
+  local os line pm
+  case $OSTYPE in
+    darwin*)
+      os='macOS (Darwin, BSD userland — e.g. BSD sed/date/stat, not GNU)' ;;
+    linux*)
+      os=Linux
+      if [[ -r /etc/os-release ]]; then
+        for line in ${(f)"$(</etc/os-release)"}; do
+          [[ $line == PRETTY_NAME=* ]] && os="Linux (${(Q)${line#PRETTY_NAME=}})"
+        done
+      fi
+      # Alpine and other minimal images symlink sed, find, etc. to busybox.
+      if [[ ${commands[sed]:A:t} == busybox ]]; then
+        os+=', BusyBox userland — limited sed/date/find options, not GNU'
+      else
+        os+=', GNU userland — e.g. GNU sed/date/stat, not BSD'
+      fi ;;
+    *)
+      os=$OSTYPE ;;
+  esac
+  local -a pms=()
+  for pm in brew port apt dnf yum pacman zypper apk nix-env; do
+    (( $+commands[$pm] )) && pms+=$pm
+  done
+  _AI_CMD_SYSTEM_PROMPT=${_AI_CMD_SYSTEM_PROMPT/__ENVIRONMENT__/"Environment: $os, zsh${pms:+, package managers: ${(j:, :)pms}}."}
+}
 
 _AI_CMD_SCHEMA='{"type":"object","properties":{"command":{"type":"string"},"message":{"type":"string"}},"required":["command","message"],"additionalProperties":false}'
 
@@ -53,7 +83,7 @@ _ai() {
   done
 
   local out err rc=1 errfile
-  errfile=$(mktemp -t ai) || return 1
+  errfile=$(mktemp "${TMPDIR:-/tmp}/ai.XXXXXX") || return 1
   print -nu2 $'\e[2mthinking…\e[0m'
   {
     # Runs in the current directory so the model knows where "here" is. --setting-sources ""

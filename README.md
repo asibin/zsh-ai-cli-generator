@@ -15,6 +15,7 @@ clear with Ctrl-C. Nothing runs until you press Enter.
 
 ### Requirements
 
+- macOS or Linux
 - zsh (uses `print -z` to fill the next prompt)
 - [Claude Code](https://claude.com/claude-code) CLI (`claude`), logged in
 - `jq`
@@ -47,6 +48,8 @@ or use double quotes (`ai "what's my ip"`).
 Each request takes about 3–5 seconds; a dim `thinking…` shows while it waits.
 
 ### Examples
+
+These were generated on macOS; on Linux you get the GNU equivalents.
 
 | Request | Command |
 | --- | --- |
@@ -95,6 +98,10 @@ The reply is structured JSON with a `command` and a `message` field
 (`--output-format json --json-schema`); the command is pushed onto the next
 prompt with `print -z`, and any message is printed above it.
 
-The model is told you're on macOS (BSD `sed`/`date`/`stat`, not GNU) with zsh
-and Homebrew. To change that, edit `_AI_CMD_SYSTEM_PROMPT` in `ai.zsh`; it's a
-single-quoted string, so don't use apostrophes inside it.
+When `ai.zsh` is sourced, it detects the OS and tells the model about it:
+macOS with BSD `sed`/`date`/`stat`, or Linux (the distro name from
+`/etc/os-release`) with GNU tools, or BusyBox tools on minimal images such as
+Alpine. It also lists the package managers on your `PATH` (`brew`, `apt`, `dnf`,
+`pacman`, …). To change the rest of the instructions, edit
+`_AI_CMD_SYSTEM_PROMPT` in `ai.zsh`; it's a single-quoted string, so don't use
+apostrophes inside it.
