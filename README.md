@@ -27,9 +27,9 @@ Only for re-recording the demo GIFs (see [Demo GIFs](#demo-gifs)):
 
 ### Install
 
-This folder is a zsh plugin named `ai`: plugin managers load `ai.plugin.zsh`,
-which sets up the Ctrl-O key binding and the `ai` command. After installing,
-open a new terminal or run `exec zsh`.
+This folder is a zsh plugin named `ai`. All of it is in one file,
+`ai.plugin.zsh`, which sets up the Ctrl-O key binding and the `ai` command.
+After installing, open a new terminal or run `exec zsh`.
 
 **Oh My Zsh:** link the folder into your custom plugins as `ai` (the folder
 name must match the plugin name), then add `ai` to the `plugins` list in
@@ -47,11 +47,10 @@ plugins=(git ai)   # keep your existing plugins, add ai
 this folder, or at its Git repository once it has one. They load
 `ai.plugin.zsh`.
 
-**No plugin manager:** source one of these from `~/.zshrc`:
+**No plugin manager:** source it from `~/.zshrc`:
 
 ```zsh
-source ~/workspace/personal/scripts/ai.plugin.zsh   # Ctrl-O key binding + the ai command (recommended)
-source ~/workspace/personal/scripts/ai.zsh          # only the ai command
+source ~/workspace/personal/scripts/ai.plugin.zsh
 ```
 
 Set any [configuration](#configuration) variables in `~/.zshrc` before the
@@ -144,9 +143,9 @@ With the `ai` command, quote the requests that contain `>` (see above).
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AI_CMD_MODEL` | `sonnet` | Model alias passed to `claude --model` (e.g. `haiku`, `opus`) |
-| `AI_CMD_KEY` | `^O` | Key that runs the widget, in the emacs and viins keymaps (`ai-widget.zsh` only). The default replaces `accept-line-and-down-history` |
+| `AI_CMD_KEY` | `^O` | Key that runs the widget, in the emacs and viins keymaps. The default replaces `accept-line-and-down-history`. Set it to `''` for no key binding (only the `ai` command) |
 
-Set them in `~/.zshrc` before the `source` line. `AI_CMD_MODEL` can also be
+Set them in `~/.zshrc` before the plugin loads. `AI_CMD_MODEL` can also be
 set per call: `AI_CMD_MODEL=opus ai …`.
 
 ### How it works
@@ -161,12 +160,12 @@ The reply is structured JSON with a `command` and a `message` field
 onto the next prompt with `print -z`; the key binding replaces the line you
 typed. Any message is shown next to it.
 
-When `ai.zsh` is sourced, it detects the OS and tells the model about it:
+When the plugin loads, it detects the OS and tells the model about it:
 macOS with BSD `sed`/`date`/`stat`, or Linux (the distro name from
 `/etc/os-release`) with GNU tools, or BusyBox tools on minimal images such as
 Alpine. It also lists the package managers on your `PATH` (`brew`, `apt`, `dnf`,
 `pacman`, …). To change the rest of the instructions, edit
-`_AI_CMD_SYSTEM_PROMPT` in `ai.zsh`; it's a single-quoted string, so don't use
+`_AI_CMD_SYSTEM_PROMPT` in `ai.plugin.zsh`; it's a single-quoted string, so don't use
 apostrophes inside it.
 
 ### Demo GIFs

@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # Re-record the README GIFs by driving a clean zsh through real requests:
-#   docs/demo-widget.gif    type a request, press Ctrl-O (ai-widget.zsh)
+#   docs/demo-widget.gif    type a request, press Ctrl-O
 #   docs/demo-command.gif   the ai command, and what goes wrong without quotes
 #
 #   docs/record-demo.sh [widget] [command]    (default: both)
@@ -22,10 +22,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# A minimal shell: no personal config, a plain prompt, ai-widget.zsh (which loads ai.zsh).
+# A minimal shell: no personal config, a plain prompt, and the plugin.
 mkdir -p $work/zdotdir
 cat > $work/zdotdir/.zshrc <<EOF
-source ${(q)repo}/ai-widget.zsh
+source ${(q)repo}/ai.plugin.zsh
 cd ${(q)work}/demo
 EOF
 cat >> $work/zdotdir/.zshrc <<'EOF'
