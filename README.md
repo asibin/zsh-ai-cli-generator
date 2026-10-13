@@ -1,15 +1,12 @@
-# scripts
-
-Personal shell helpers.
-
-## `ai` — natural language to shell command
+# zsh-ai-cli-generator
 
 Describe what you want in plain English and get a shell command back, ready to
 edit or run. Claude writes the command; nothing runs until you press Enter.
+Type a request and press Ctrl-O, or run `ai <request>`.
 
 ![Typing requests and pressing Ctrl-O turns them into shell commands](docs/demo-widget.gif)
 
-### Dependencies
+## Dependencies
 
 | Dependency | Needed for | Install |
 | --- | --- | --- |
@@ -25,46 +22,58 @@ Only for re-recording the demo GIFs (see [Demo GIFs](#demo-gifs)):
 | `asciinema`, `agg` | `brew install asciinema agg` |
 | `expect`, `python3` | preinstalled on macOS; `sudo apt install expect python3` |
 
-### Install
+## Install
 
-This folder is a zsh plugin named `ai`. All of it is in one file,
+This repo is a zsh plugin named `ai`. All of it is in one file,
 `ai.plugin.zsh`, which sets up the Ctrl-O key binding and the `ai` command.
 After installing, open a new terminal or run `exec zsh`.
 
-**Oh My Zsh:** link the folder into your custom plugins as `ai` (the folder
-name must match the plugin name), then add `ai` to the `plugins` list in
-`~/.zshrc`:
+**Oh My Zsh:** clone into your custom plugins as `ai` (the folder name must
+match the plugin name), then add `ai` to the `plugins` list in `~/.zshrc`:
 
 ```zsh
-ln -s ~/workspace/personal/scripts ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/ai
+git clone https://github.com/asibin/zsh-ai-cli-generator ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/ai
 ```
 
 ```zsh
 plugins=(git ai)   # keep your existing plugins, add ai
 ```
 
-**Other plugin managers** (antidote, zinit, zplug, sheldon, …): point them at
-this folder, or at its Git repository once it has one. They load
-`ai.plugin.zsh`.
+**Other plugin managers:**
 
-**No plugin manager:** source it from `~/.zshrc`:
+| Manager | Add |
+| --- | --- |
+| antidote | `asibin/zsh-ai-cli-generator` in `~/.zsh_plugins.txt` |
+| zinit | `zinit light asibin/zsh-ai-cli-generator` |
+| zplug | `zplug "asibin/zsh-ai-cli-generator"` |
+| sheldon | `sheldon add ai --github asibin/zsh-ai-cli-generator` |
+
+**No plugin manager:** clone it anywhere and source the plugin file from
+`~/.zshrc`:
 
 ```zsh
-source ~/workspace/personal/scripts/ai.plugin.zsh
+git clone https://github.com/asibin/zsh-ai-cli-generator ~/.zsh/zsh-ai-cli-generator
 ```
+
+```zsh
+source ~/.zsh/zsh-ai-cli-generator/ai.plugin.zsh
+```
+
+To update, run `git pull` in the clone (or your plugin manager's update
+command).
 
 Set any [configuration](#configuration) variables in `~/.zshrc` before the
 plugin loads (before `source $ZSH/oh-my-zsh.sh` with Oh My Zsh). If Ctrl-O does
 nothing, a plugin loaded later (such as `zsh-vi-mode`) may have rebound it:
 load `ai` last, or pick another `AI_CMD_KEY`.
 
-### Usage guide
+## Usage guide
 
 There are two ways to ask: a key binding and a command. Both put the generated
 command on your prompt for you to check. Press Enter to run it, edit it first,
 or clear it with Ctrl-U.
 
-#### 1. Key binding: type, then Ctrl-O (recommended)
+### 1. Key binding: type, then Ctrl-O (recommended)
 
 1. Type the request on the command line as if it were a command:
    `list files > 1MB here`
@@ -77,7 +86,7 @@ or clear it with Ctrl-U.
 The shell never reads the request, so `>`, `|`, `#`, `$` and apostrophes need
 no quoting. This is the demo at the top of this page.
 
-#### 2. The `ai` command
+### 2. The `ai` command
 
 ```
 ai <what you want>
@@ -96,7 +105,7 @@ request when it contains any of `` > < | & ; # $ ` " { } ``:
 
 ![The ai command, and what an unquoted > or apostrophe does](docs/demo-command.gif)
 
-#### What else you may see
+### What else you may see
 
 - **A warning** above the prompt, or below the line with Ctrl-O, when the
   command deletes, overwrites or kills something:
@@ -114,14 +123,14 @@ request when it contains any of `` > < | & ; # $ ` " { } ``:
   ai: A shell command can't book a flight; use an airline or a booking site like Google Flights instead.
   ```
 
-#### Tips
+### Tips
 
 - Be specific about the output you want ("largest first", "human-readable
   sizes", "only names"); Claude includes the flags for it.
 - "Here" and "this folder" mean your current directory.
 - Always read the command before pressing Enter, especially with a warning.
 
-### Examples
+## Examples
 
 Generated on macOS; on Linux you get the GNU equivalents.
 
@@ -138,7 +147,7 @@ Generated on macOS; on Linux you get the GNU equivalents.
 
 With the `ai` command, quote the requests that contain `>` (see above).
 
-### Configuration
+## Configuration
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -148,7 +157,7 @@ With the `ai` command, quote the requests that contain `>` (see above).
 Set them in `~/.zshrc` before the plugin loads. `AI_CMD_MODEL` can also be
 set per call: `AI_CMD_MODEL=opus ai …`.
 
-### How it works
+## How it works
 
 `ai` runs `claude -p` with its own system prompt and no tools, MCP servers,
 settings, CLAUDE.md files or session history, so each request is a single,
@@ -168,7 +177,7 @@ Alpine. It also lists the package managers on your `PATH` (`brew`, `apt`, `dnf`,
 `_AI_CMD_SYSTEM_PROMPT` in `ai.plugin.zsh`; it's a single-quoted string, so don't use
 apostrophes inside it.
 
-### Demo GIFs
+## Demo GIFs
 
 `docs/record-demo.sh` re-records both GIFs by driving a clean zsh through real
 requests; `docs/record-demo.sh widget` or `docs/record-demo.sh command`
