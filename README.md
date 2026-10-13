@@ -62,9 +62,9 @@ source ~/.zsh/zsh-ai-cli-generator/ai.plugin.zsh
 To update, run `git pull` in the clone (or your plugin manager's update
 command).
 
-Set any [configuration](#configuration) variables in `~/.zshrc` before the
-plugin loads (before `source $ZSH/oh-my-zsh.sh` with Oh My Zsh). If Ctrl-O does
-nothing, a plugin loaded later (such as `zsh-vi-mode`) may have rebound it:
+Set [configuration](#configuration) variables in `~/.zshrc`; `AI_CMD_KEY` must
+come before the plugin loads (before `source $ZSH/oh-my-zsh.sh` with Oh My
+Zsh). If Ctrl-O does nothing, a plugin loaded later (such as `zsh-vi-mode`) may have rebound it:
 load `ai` last, or pick another `AI_CMD_KEY`.
 
 ## Usage guide
@@ -128,6 +128,9 @@ request when it contains any of `` > < | & ; # $ ` " { } ``:
 - Be specific about the output you want ("largest first", "human-readable
   sizes", "only names"); Claude includes the flags for it.
 - "Here" and "this folder" mean your current directory.
+- If you keep correcting the same thing (a tool you prefer, one you don't
+  have, flags you always want), put it in
+  [`AI_CMD_INSTRUCTIONS`](#configuration) once.
 - Always read the command before pressing Enter, especially with a warning.
 
 ## Examples
@@ -155,8 +158,9 @@ With the `ai` command, quote the requests that contain `>` (see above).
 | `AI_CMD_KEY` | `^O` | Key that runs the widget, in the emacs and viins keymaps. The default replaces `accept-line-and-down-history`. Set it to `''` for no key binding (only the `ai` command) |
 | `AI_CMD_INSTRUCTIONS` | — | Your own instructions, added to the end of the system prompt. Use one line per instruction |
 
-Set them in `~/.zshrc` before the plugin loads. `AI_CMD_MODEL` can also be
-set per call: `AI_CMD_MODEL=opus ai …`.
+Set them in `~/.zshrc`. `AI_CMD_KEY` is used once, when the plugin loads, so
+set it before that. The other two are read on every request: you can change
+them in a running shell, or set them for one call: `AI_CMD_MODEL=opus ai …`.
 
 `AI_CMD_INSTRUCTIONS` is for preferences that apply to every request, such as
 the tools you have installed:
@@ -167,10 +171,10 @@ Prefer rg over grep and fd over find.
 Never use sudo.'
 ```
 
-It's read on every request, so you can also change it in a running shell, or
-set it for one call: `AI_CMD_INSTRUCTIONS='Use GNU tools from coreutils (gls, gdate).' ai …`.
-The instructions can't change the reply format (one command line), and the
-command still needs your Enter to run.
+The example uses single quotes, so an apostrophe inside ("Don't use sudo")
+would end the string; use double quotes for that, or avoid the apostrophe. The
+instructions can't change the reply format (one command line), and the command
+still needs your Enter to run.
 
 ## How it works
 
@@ -189,9 +193,9 @@ macOS with BSD `sed`/`date`/`stat`, or Linux (the distro name from
 `/etc/os-release`) with GNU tools, or BusyBox tools on minimal images such as
 Alpine. It also lists the package managers on your `PATH` (`brew`, `apt`, `dnf`,
 `pacman`, …). Your `AI_CMD_INSTRUCTIONS`, if set, go at the end of the
-system prompt. To change the rest of the instructions, edit `_AI_CMD_SYSTEM_PROMPT` in
-`ai.plugin.zsh`; it's a single-quoted string, so don't use apostrophes inside
-it.
+system prompt. To change the built-in instructions, edit
+`_AI_CMD_SYSTEM_PROMPT` in `ai.plugin.zsh`; it's a single-quoted string, so
+don't use apostrophes inside it.
 
 ## Demo GIFs
 

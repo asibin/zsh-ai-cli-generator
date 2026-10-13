@@ -12,14 +12,16 @@
 #   ai 'find files > 100MB modified this week'
 # An apostrophe can't go inside single quotes: drop it (ai 'whats my ip') or use double quotes.
 #
-# Load with a plugin manager, or from ~/.zshrc:   source ~/workspace/personal/scripts/ai.plugin.zsh
+# Load with a plugin manager, or from ~/.zshrc:   source /path/to/zsh-ai-cli-generator/ai.plugin.zsh
 #
-# Config (env vars, set before the plugin loads):
-#   AI_CMD_MODEL   model alias passed to `claude --model` (default: sonnet)
+# Config (env vars):
 #   AI_CMD_KEY     key bound in the emacs and viins keymaps (default: ^O, i.e. Ctrl-O; replaces
 #                  accept-line-and-down-history). Set it to '' for no key binding.
+#                  Set it before the plugin loads.
+#   AI_CMD_MODEL   model alias passed to `claude --model` (default: sonnet)
 #   AI_CMD_INSTRUCTIONS   extra instructions added to the system prompt, one per line, e.g.
-#                  'Use bat instead of cat.' Read on every request, so it can change any time.
+#                  'Use bat instead of cat.'
+#   AI_CMD_MODEL and AI_CMD_INSTRUCTIONS are read on every request, so they can change any time.
 #
 # Requires: claude CLI, jq.
 
