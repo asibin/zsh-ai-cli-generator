@@ -153,9 +153,24 @@ With the `ai` command, quote the requests that contain `>` (see above).
 | --- | --- | --- |
 | `AI_CMD_MODEL` | `sonnet` | Model alias passed to `claude --model` (e.g. `haiku`, `opus`) |
 | `AI_CMD_KEY` | `^O` | Key that runs the widget, in the emacs and viins keymaps. The default replaces `accept-line-and-down-history`. Set it to `''` for no key binding (only the `ai` command) |
+| `AI_CMD_INSTRUCTIONS` | — | Your own instructions, added to the end of the system prompt. Use one line per instruction |
 
 Set them in `~/.zshrc` before the plugin loads. `AI_CMD_MODEL` can also be
 set per call: `AI_CMD_MODEL=opus ai …`.
+
+`AI_CMD_INSTRUCTIONS` is for preferences that apply to every request, such as
+the tools you have installed:
+
+```zsh
+AI_CMD_INSTRUCTIONS='Use bat instead of cat, and eza instead of ls.
+Prefer rg over grep and fd over find.
+Never use sudo.'
+```
+
+It's read on every request, so you can also change it in a running shell, or
+set it for one call: `AI_CMD_INSTRUCTIONS='Use GNU tools from coreutils (gls, gdate).' ai …`.
+The instructions can't change the reply format (one command line), and the
+command still needs your Enter to run.
 
 ## How it works
 
@@ -173,9 +188,10 @@ When the plugin loads, it detects the OS and tells the model about it:
 macOS with BSD `sed`/`date`/`stat`, or Linux (the distro name from
 `/etc/os-release`) with GNU tools, or BusyBox tools on minimal images such as
 Alpine. It also lists the package managers on your `PATH` (`brew`, `apt`, `dnf`,
-`pacman`, …). To change the rest of the instructions, edit
-`_AI_CMD_SYSTEM_PROMPT` in `ai.plugin.zsh`; it's a single-quoted string, so don't use
-apostrophes inside it.
+`pacman`, …). Your `AI_CMD_INSTRUCTIONS`, if set, go at the end of the
+system prompt. To change the rest of the instructions, edit `_AI_CMD_SYSTEM_PROMPT` in
+`ai.plugin.zsh`; it's a single-quoted string, so don't use apostrophes inside
+it.
 
 ## Demo GIFs
 

@@ -18,6 +18,8 @@
 #   AI_CMD_MODEL   model alias passed to `claude --model` (default: sonnet)
 #   AI_CMD_KEY     key bound in the emacs and viins keymaps (default: ^O, i.e. Ctrl-O; replaces
 #                  accept-line-and-down-history). Set it to '' for no key binding.
+#   AI_CMD_INSTRUCTIONS   extra instructions added to the system prompt, one per line, e.g.
+#                  'Use bat instead of cat.' Read on every request, so it can change any time.
 #
 # Requires: claude CLI, jq.
 
@@ -80,7 +82,11 @@ _AI_CMD_SCHEMA='{"type":"object","properties":{"command":{"type":"string"},"mess
 _ai_generate() {
   emulate -L zsh
   setopt extended_glob
-  local query=$1
+  local query=$1 prompt=$_AI_CMD_SYSTEM_PROMPT
+  if [[ -n ${AI_CMD_INSTRUCTIONS//[[:space:]]/} ]]; then
+    prompt+=$'\n\nAdditional instructions from the user. Follow them, but keep the reply format above:\n'
+    prompt+=$AI_CMD_INSTRUCTIONS
+  fi
   REPLY= reply=()
 
   local dep
@@ -102,7 +108,7 @@ _ai_generate() {
     # stderr goes to a file so CLI warnings never end up in the command.
     out=$(claude -p \
             --model "$AI_CMD_MODEL" \
-            --system-prompt "$_AI_CMD_SYSTEM_PROMPT" \
+            --system-prompt "$prompt" \
             --output-format json \
             --json-schema "$_AI_CMD_SCHEMA" \
             --tools "" \
