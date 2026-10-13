@@ -1,6 +1,6 @@
 # ai-widget — type a request on the command line, press a key, and it becomes a shell command.
 #
-#   find files > 100MB modified this week, largest first      press Ctrl-X Ctrl-A
+#   find files > 100MB modified this week, largest first      press Ctrl-O
 #   find . -type f -size +100M -mtime -7 -exec stat … | sort -rn   edit or hit Enter
 #
 # The shell never parses the request, so > < | & ; # $ ` " { } and apostrophes need no quoting.
@@ -10,12 +10,12 @@
 #   source ~/workspace/personal/scripts/ai-widget.zsh
 #
 # Config (env vars, set before the source line):
-#   AI_CMD_KEY     key bound in the emacs and viins keymaps (default: ^X^A, i.e. Ctrl-X Ctrl-A)
+#   AI_CMD_KEY     key bound in the emacs and viins keymaps (default: ^O, i.e. Ctrl-O; replaces accept-line-and-down-history)
 #   AI_CMD_MODEL   see ai.zsh
 
 source ${${(%):-%x}:A:h}/ai.zsh
 
-: ${AI_CMD_KEY:='^X^A'}
+: ${AI_CMD_KEY:='^O'}
 
 # Replace the request in the line editor with the generated command.
 _ai_widget() {
