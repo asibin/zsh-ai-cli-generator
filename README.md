@@ -27,12 +27,37 @@ Only for re-recording the demo GIFs (see [Demo GIFs](#demo-gifs)):
 
 ### Install
 
-Add **one** of these to `~/.zshrc`, then open a new terminal or run `exec zsh`:
+This folder is a zsh plugin named `ai`: plugin managers load `ai.plugin.zsh`,
+which sets up the Ctrl-O key binding and the `ai` command. After installing,
+open a new terminal or run `exec zsh`.
+
+**Oh My Zsh:** link the folder into your custom plugins as `ai` (the folder
+name must match the plugin name), then add `ai` to the `plugins` list in
+`~/.zshrc`:
 
 ```zsh
-source ~/workspace/personal/scripts/ai-widget.zsh   # Ctrl-O key binding + the ai command (recommended)
+ln -s ~/workspace/personal/scripts ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/ai
+```
+
+```zsh
+plugins=(git ai)   # keep your existing plugins, add ai
+```
+
+**Other plugin managers** (antidote, zinit, zplug, sheldon, …): point them at
+this folder, or at its Git repository once it has one. They load
+`ai.plugin.zsh`.
+
+**No plugin manager:** source one of these from `~/.zshrc`:
+
+```zsh
+source ~/workspace/personal/scripts/ai.plugin.zsh   # Ctrl-O key binding + the ai command (recommended)
 source ~/workspace/personal/scripts/ai.zsh          # only the ai command
 ```
+
+Set any [configuration](#configuration) variables in `~/.zshrc` before the
+plugin loads (before `source $ZSH/oh-my-zsh.sh` with Oh My Zsh). If Ctrl-O does
+nothing, a plugin loaded later (such as `zsh-vi-mode`) may have rebound it:
+load `ai` last, or pick another `AI_CMD_KEY`.
 
 ### Usage guide
 
