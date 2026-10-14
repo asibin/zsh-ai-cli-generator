@@ -1,8 +1,9 @@
 # zsh-ai-cli-generator
 
 Describe what you want in plain English and get a shell command back, ready to
-edit or run. Claude writes the command; nothing runs until you press Enter.
-Type a request and press Ctrl-O, or run `ai <request>`.
+edit or run. Claude writes the command, or a model you run yourself through
+Ollama, LM Studio or any OpenAI-compatible server; nothing runs until you press
+Enter. Type a request and press Ctrl-O, or run `ai <request>`.
 
 ![Typing requests and pressing Ctrl-O turns them into shell commands](docs/demo-widget.gif)
 
@@ -12,8 +13,9 @@ Type a request and press Ctrl-O, or run `ai <request>`.
 | --- | --- | --- |
 | macOS or Linux | the OS the commands are written for | — |
 | zsh | `print -z`, the line editor (ZLE) | preinstalled on macOS; `sudo apt install zsh` (or your distro's package manager) |
-| [Claude Code](https://claude.com/claude-code) CLI (`claude`) | generating the commands | see the link, then run `claude` once to log in |
-| `jq` | parsing Claude's JSON reply | `brew install jq` / `sudo apt install jq` |
+| `jq` | building requests, parsing the model's JSON reply | `brew install jq` / `sudo apt install jq` |
+| [Claude Code](https://claude.com/claude-code) CLI (`claude`) | the default `claude` backend | see the link, then run `claude` once to log in |
+| `curl` | the `openai` backend ([local models](#local-and-other-models)) | preinstalled on macOS and most Linux distros |
 
 Only for re-recording the demo GIFs (see [Demo GIFs](#demo-gifs)):
 
@@ -108,7 +110,9 @@ request when it contains any of `` > < | & ; # $ ` " { } ``:
 ### What else you may see
 
 - **A warning** above the prompt, or below the line with Ctrl-O, when the
-  command deletes, overwrites or kills something:
+  command deletes, overwrites or kills something. It comes from the model, or,
+  when the model gave none, from a local check of the command (`rm`, `kill`,
+  `find -delete`, `sed -i`, a `>` redirect, `git reset --hard`, …):
 
   ```
   ❯ ai kill whatever is on port 8080
@@ -154,13 +158,16 @@ With the `ai` command, quote the requests that contain `>` (see above).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AI_CMD_MODEL` | `sonnet` | Model alias passed to `claude --model` (e.g. `haiku`, `opus`) |
+| `AI_CMD_BACKEND` | `claude` | `claude` for the Claude Code CLI, or `openai` for any OpenAI-compatible server (see [Local and other models](#local-and-other-models)) |
+| `AI_CMD_MODEL` | `sonnet` with `claude`; none with `openai` | Model name: an alias for `claude --model` (e.g. `haiku`, `opus`), or the server's model name (e.g. `qwen2.5-coder:7b`), which `openai` requires |
+| `AI_CMD_URL` | `http://localhost:11434/v1` (Ollama) | `openai` only: the API base URL, up to and including `/v1` |
+| `AI_CMD_API_KEY` | — | `openai` only: sent as a bearer token, for hosted services |
 | `AI_CMD_KEY` | `^O` | Key that runs the widget, in the emacs and viins keymaps. The default replaces `accept-line-and-down-history`. Set it to `''` for no key binding (only the `ai` command) |
 | `AI_CMD_INSTRUCTIONS` | — | Your own instructions, added to the end of the system prompt. Use one line per instruction |
 
 Set them in `~/.zshrc`. `AI_CMD_KEY` is used once, when the plugin loads, so
-set it before that. The other two are read on every request: you can change
-them in a running shell, or set them for one call: `AI_CMD_MODEL=opus ai …`.
+set it before that. The others are read on every request: you can change them
+in a running shell, or set them for one call: `AI_CMD_MODEL=opus ai …`.
 
 `AI_CMD_INSTRUCTIONS` is for preferences that apply to every request, such as
 the tools you have installed:
@@ -176,15 +183,61 @@ would end the string; use double quotes for that, or avoid the apostrophe. The
 instructions can't change the reply format (one command line), and the command
 still needs your Enter to run.
 
+## Local and other models
+
+With `AI_CMD_BACKEND=openai`, `ai` talks to any server with an OpenAI-compatible
+chat API instead of Claude. With a model running on your machine, nothing
+leaves it, and you don't need the Claude Code CLI or an account.
+
+**Ollama** (the default URL), with a coding model as an example:
+
+```zsh
+ollama pull qwen2.5-coder:7b
+```
+
+```zsh
+AI_CMD_BACKEND=openai
+AI_CMD_MODEL=qwen2.5-coder:7b
+```
+
+**Other servers:** set `AI_CMD_URL` as well.
+
+| Server | `AI_CMD_URL` |
+| --- | --- |
+| LM Studio | `http://localhost:1234/v1` |
+| llama.cpp (`llama-server`) | `http://localhost:8080/v1` |
+| vLLM | `http://localhost:8000/v1` |
+| OpenRouter (hosted) | `https://openrouter.ai/api/v1`, plus `AI_CMD_API_KEY` |
+
+Things to know:
+
+- **Quality depends on the model.** Small models (a few billion parameters)
+  are fast but often get flags wrong, mix up BSD and GNU options, or answer
+  something nobody asked. Larger models, and models trained for code, do
+  better. Read the command before pressing Enter, as always.
+- **The first request after a while is slow** while the server loads the
+  model; later ones are quick.
+- `ai` asks for the reply as JSON in a fixed shape (`response_format` with a
+  JSON schema). Servers that ignore that usually still follow the system
+  prompt, and `ai` strips code fences and `<think>` blocks around the JSON. If
+  a model keeps answering in prose, you'll see "the model didn't reply with the
+  expected JSON"; try another model.
+
 ## How it works
 
-`ai` runs `claude -p` with its own system prompt and no tools, MCP servers,
-settings, CLAUDE.md files or session history, so each request is a single,
-isolated model call. It runs in your current directory, so the model knows
-which folder "here" means; the only context it gets about that folder is its
-path and whether it's a git repository.
-The reply is structured JSON with a `command` and a `message` field
-(`--output-format json --json-schema`). The `ai` command pushes the command
+Each request is a single, isolated model call with `ai`'s own system prompt.
+The only context the model gets about your folder is its path and whether it's
+a git repository, so it knows which folder "here" means.
+
+- **`claude` backend:** runs `claude -p` with no tools, MCP servers, settings,
+  CLAUDE.md files or session history, and asks for structured output
+  (`--output-format json --json-schema`).
+- **`openai` backend:** sends one `POST /chat/completions` with `curl`, with
+  the same JSON schema as `response_format`.
+
+Either way, the reply is JSON with a `command` and a `message` field. If the
+model gave no warning, a local check looks for commands that delete, overwrite
+or stop something and adds one. The `ai` command pushes the command
 onto the next prompt with `print -z`; the key binding replaces the line you
 typed. Any message is shown next to it.
 
@@ -196,6 +249,12 @@ Alpine. It also lists the package managers on your `PATH` (`brew`, `apt`, `dnf`,
 system prompt. To change the built-in instructions, edit
 `_AI_CMD_SYSTEM_PROMPT` in `ai.plugin.zsh`; it's a single-quoted string, so
 don't use apostrophes inside it.
+
+## Tests
+
+`tests/run.zsh` runs the plugin against fake `claude` and `curl` commands, so
+it calls no model and needs nothing running. It covers both backends' requests,
+replies and errors, and the local warning check.
 
 ## Demo GIFs
 
