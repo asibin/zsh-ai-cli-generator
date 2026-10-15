@@ -32,20 +32,22 @@ After an edit, `source` the file again or open a new shell. You need the
 
 ## Code layout
 
-Everything is in `ai.plugin.zsh`:
+Everything is in `ai.plugin.zsh`. Functions start with `_ai_cmd_`, like the
+`AI_CMD_*` settings, so they don't clash with other plugins.
 
 | Function | What it does |
 | --- | --- |
-| `_ai_generate` | builds the prompt, calls the backend, checks the reply; prints nothing |
-| `_ai_ask_claude`, `_ai_ask_openai` | one per backend: send the request, set `cmd` and `msg` |
-| `_ai_split_reply` | reads `command` and `message` from the reply JSON |
-| `_ai_risky` | the local check for commands that delete, overwrite or stop something |
-| `_ai` | the `ai` command |
-| `_ai_widget` | the Ctrl-O key binding |
+| `_ai_cmd_generate` | the entry point: runs `_ai_cmd_request`, then replaces control characters in its messages; prints nothing |
+| `_ai_cmd_request` | builds the prompt, calls the backend, checks the reply |
+| `_ai_cmd_ask_claude`, `_ai_cmd_ask_openai` | one per backend: send the request, return the reply's JSON |
+| `_ai_cmd_parse_reply` | reads `command` and `message` from the reply's JSON |
+| `_ai_cmd_risky` | the local check for commands that delete, overwrite or stop something |
+| `_ai_cmd_command` | the `ai` command |
+| `_ai_cmd_widget` | the Ctrl-O key binding |
 
-`_ai_generate` returns 0 with the command in `REPLY` and an optional warning in
-`reply`, or 1 with error lines in `reply`. `_ai` and `_ai_widget` only decide how
-to show that.
+`_ai_cmd_generate` returns 0 with the command in `REPLY` and an optional warning
+in `reply`, or 1 with error lines in `reply`. `_ai_cmd_command` and
+`_ai_cmd_widget` only decide how to show that.
 
 ## Conventions
 
@@ -58,6 +60,9 @@ to show that.
 - No new dependencies beyond zsh, `jq` and the backend's own tool (`claude` or
   `curl`).
 - `_AI_CMD_SYSTEM_PROMPT` is a single-quoted string: no apostrophes inside it.
+- Don't name variables after zsh's special parameters, even as locals: a local
+  `prompt` (zsh's `PS1`) showed the system prompt as the shell prompt while a
+  request ran. `zsh -fc 'print ${(k)parameters[(R)*special*]}'` lists them.
 - Comments explain why, not what; match the style around your change.
 
 ## Tests
@@ -69,11 +74,18 @@ tests/run.zsh
 ```
 
 They use fake `claude` and `curl` commands, so they call no model and need
-nothing running. Add a test for what you change:
+nothing running. With `expect` installed, `tests/interactive.exp` also drives a
+real interactive zsh, for what only a terminal shows: the `ai` command, Ctrl-O,
+Ctrl-C and timeouts. If it fails, `AI_TEST_LOG=session.log tests/run.zsh` saves
+the whole session to read. GitHub Actions runs everything on macOS, Ubuntu and
+Alpine for each pull request.
+
+Add a test for what you change:
 
 - a reply format or error from a backend: a case in the backend's section
 - a command the risky check gets wrong: add it to the `risky` or `safe` list
 - a new backend: its own section, with a fake command like the existing ones
+- something you can only see in a terminal: a step in `tests/interactive.exp`
 
 If you change the system prompt, also try a few real requests with Claude and,
 if you can, a local model, and say in the pull request what you tried. Prompt
@@ -81,12 +93,14 @@ changes can't be checked by the tests.
 
 ## Adding a backend
 
-1. Write `_ai_ask_<name>`: it gets the request and the system prompt as `$1` and
-   `$2`, and sets `cmd` and `msg` (the caller's locals), or sets `reply` to error
-   lines and returns 1. `_ai_split_reply` parses the usual JSON reply.
-2. Add the name, and its required command, to the `case` in `_ai_generate`.
-3. Document its settings in the header comment of `ai.plugin.zsh` and in the
-   README's Configuration section.
+1. Write `_ai_cmd_ask_<name> <request> <system prompt> <timeout> <temp dir>`.
+   On success it returns 0 with the reply's JSON text (`command` and `message`)
+   in `REPLY`; on failure it returns 1 with error lines in `reply`. The timeout
+   is in seconds, 0 for none. The temp dir is the backend's to use; the caller
+   removes it.
+2. Add the name, and the command it needs, to the `case` in `_ai_cmd_request`.
+3. Add its settings to the list in the header comment of `ai.plugin.zsh`, and
+   describe them in the README's Configuration section.
 4. Add tests.
 
 Many services already offer an OpenAI-compatible API; check whether the `openai`

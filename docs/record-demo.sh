@@ -35,15 +35,15 @@ setopt transient_rprompt   # drop the key badge from lines that have been run
 RPROMPT=
 
 # Tell expect when claude has answered: an invisible terminal-title change, which agg ignores.
-functions[_ai_generate_real]=$functions[_ai_generate]
-_ai_generate() { _ai_generate_real "$@"; local rc=$?; print -n $'\e]2;ai-done\a' >/dev/tty; return $rc }
+functions[_ai_cmd_generate_real]=$functions[_ai_cmd_generate]
+_ai_cmd_generate() { _ai_cmd_generate_real "$@"; local rc=$?; print -n $'\e]2;ai-done\a' >/dev/tty; return $rc }
 
 # Show which key was pressed as a badge at the right end of the line. Clearing RPROMPT
 # without a redraw leaves the badge on screen until the next redraw, and keeps the
 # widget's messages below the line (a redraw would erase them).
 _demo_badge() { RPROMPT="%K{magenta}%F{black} $1 %f%k"; zle reset-prompt; zle -R; RPROMPT=; }
 
-zle -N ai-generate-real _ai_widget
+zle -N ai-generate-real _ai_cmd_widget
 _demo_ai() { _demo_badge Ctrl-O; zle ai-generate-real; }
 _demo_enter() { _demo_badge Enter; sleep 0.6; zle accept-line; }
 _demo_clear() { _demo_badge Ctrl-U; sleep 0.6; zle kill-whole-line; }
