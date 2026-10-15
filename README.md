@@ -263,6 +263,10 @@ requests; `docs/record-demo.sh widget` or `docs/record-demo.sh command`
 re-records just one. It makes real `claude` calls, so the generated commands
 can differ from the current GIFs.
 
+## Contributing
+
+Bug reports and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 [MIT](LICENSE)
