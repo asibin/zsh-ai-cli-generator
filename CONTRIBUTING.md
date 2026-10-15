@@ -104,8 +104,7 @@ result before committing it.
   how you tested it.
 - Commit messages: a short subject in the imperative ("Add …", "Fix …"), and a
   body when the reason isn't obvious.
-- Update the README when you change behaviour or settings, and add a line
-  under "Unreleased" in [CHANGELOG.md](CHANGELOG.md) for anything users notice.
+- Update the README when you change behaviour or settings.
 
 By contributing, you agree that your contributions are licensed under the
 [MIT License](LICENSE).
