@@ -1,4 +1,4 @@
-# ai — natural language to shell command, via the claude CLI. A zsh plugin; see README.md.
+# ai — natural language to shell command, via Claude or a local model. A zsh plugin; see README.md.
 #
 # Key binding: type the request on the command line, press Ctrl-O, and it becomes the command.
 #   find files > 100MB modified this week, largest first      press Ctrl-O
@@ -18,21 +18,26 @@
 #   AI_CMD_KEY     key bound in the emacs and viins keymaps (default: ^O, i.e. Ctrl-O; replaces
 #                  accept-line-and-down-history). Set it to '' for no key binding.
 #                  Set it before the plugin loads.
-#   AI_CMD_MODEL   model alias passed to `claude --model` (default: sonnet)
+#   AI_CMD_BACKEND claude (default): the claude CLI.
+#                  openai: any server with an OpenAI-compatible chat API, such as Ollama,
+#                  LM Studio, llama.cpp, vLLM or OpenRouter.
+#   AI_CMD_MODEL   model name. claude: an alias for `claude --model` (default: sonnet).
+#                  openai: required, e.g. llama3.2 for Ollama.
+#   AI_CMD_URL     openai only: the API base URL (default: http://localhost:11434/v1, Ollama).
+#   AI_CMD_API_KEY openai only: sent as a bearer token, for hosted services.
 #   AI_CMD_INSTRUCTIONS   extra instructions added to the system prompt, one per line, e.g.
 #                  'Use bat instead of cat.'
-#   AI_CMD_MODEL and AI_CMD_INSTRUCTIONS are read on every request, so they can change any time.
+#   All but AI_CMD_KEY are read on every request, so they can change any time.
 #
-# Requires: claude CLI, jq.
+# Requires: jq, plus the claude CLI (claude backend) or curl (openai backend).
 
-: ${AI_CMD_MODEL:=sonnet}
 : ${AI_CMD_KEY='^O'}   # no colon: an empty value means no key binding
 
 # Single-quoted string: do not use apostrophes inside it.
 _AI_CMD_SYSTEM_PROMPT='You translate a natural-language request into exactly one shell command line.
 
 __ENVIRONMENT__
-The command runs in the working directory you were told about. Use relative paths like "." for "here"/"this folder".
+__DIRECTORY__ The command runs there. Use relative paths like "." for "here"/"this folder".
 
 Reply with the JSON fields "command" and "message":
 - "command": ONLY the command line, exactly as it should be typed. No markdown, no backticks around it, no leading "$", no "#" comments.
@@ -77,39 +82,98 @@ Command rules:
 
 _AI_CMD_SCHEMA='{"type":"object","properties":{"command":{"type":"string"},"message":{"type":"string"}},"required":["command","message"],"additionalProperties":false}'
 
-# Ask Claude for one command line. Prints nothing, so the `ai` command and the ZLE widget
+# Ask the model for one command line. Prints nothing, so the `ai` command and the ZLE widget
 # can each show the result their own way.
 #   success: returns 0, REPLY=the command, reply=(warning) or ()
 #   failure: returns 1, reply=(error lines)
 _ai_generate() {
   emulate -L zsh
   setopt extended_glob
-  local query=$1 prompt=$_AI_CMD_SYSTEM_PROMPT
-  if [[ -n ${AI_CMD_INSTRUCTIONS//[[:space:]]/} ]]; then
-    prompt+=$'\n\nAdditional instructions from the user. Follow them, but keep the reply format above:\n'
-    prompt+=$AI_CMD_INSTRUCTIONS
-  fi
+  local query=$1 backend=${AI_CMD_BACKEND:-claude}
   REPLY= reply=()
 
+  local -a deps=(jq)
+  case $backend in
+    claude) deps+=claude ;;
+    openai) deps+=curl ;;
+    *)
+      reply=("ai: unknown AI_CMD_BACKEND '$backend' (use claude or openai)")
+      return 1 ;;
+  esac
   local dep
-  for dep in claude jq; do
+  for dep in $deps; do
     if (( ! $+commands[$dep] )); then
       reply=("ai: $dep is required but not on PATH")
       return 1
     fi
   done
 
+  # Tell the model where "here" is, and whether it's a git repository (.git is a file in
+  # worktrees and submodules, so test with -e).
+  local dir=$PWD where='not a git repository'
+  while true; do
+    if [[ -e $dir/.git ]]; then
+      where='a git repository'
+      break
+    fi
+    [[ $dir == / ]] && break
+    dir=${dir:h}
+  done
+  local prompt=${_AI_CMD_SYSTEM_PROMPT/__DIRECTORY__/"Working directory: $PWD ($where)."}
+  if [[ -n ${AI_CMD_INSTRUCTIONS//[[:space:]]/} ]]; then
+    prompt+=$'\n\nAdditional instructions from the user. Follow them, but keep the reply format above:\n'
+    prompt+=$AI_CMD_INSTRUCTIONS
+  fi
+
+  # The backend sets cmd and msg, or reply=(error lines) and returns 1.
+  local cmd msg
+  _ai_ask_$backend "$query" "$prompt" || return 1
+
+  # A leading space would hide the command from history (HIST_IGNORE_SPACE).
+  cmd=${${cmd##[[:space:]]#}%%[[:space:]]#}
+
+  if [[ -z $cmd ]]; then
+    reply=("ai: ${msg:-empty response}")
+    return 1
+  fi
+  if [[ $cmd == *$'\n'* ]]; then
+    reply=("ai: expected one command line, got several; not inserting:" "$cmd")
+    return 1
+  fi
+
+  # Small models often leave out the warning, so check locally as well.
+  if [[ -z $msg ]] && _ai_risky "$cmd"; then
+    msg='This command may delete, overwrite or stop something; check it before running.'
+  fi
+
+  REPLY=$cmd
+  reply=(${msg:+"$msg"})
+}
+
+# Split a JSON object's "command" and "message" fields into cmd and msg (the caller's locals).
+# Returns 1 if $1 isn't such an object.
+_ai_split_reply() {
+  local parsed
+  [[ -n ${1//[[:space:]]/} ]] || return 1
+  parsed=$(jq -j 'if type == "object" then [(.command // "" | tostring), (.message // "" | tostring)]
+                  else error end | join("\u0000")' <<<$1 2>/dev/null) || return 1
+  local -a fields=( "${(@0)parsed}" )
+  cmd=$fields[1] msg=$fields[2]
+}
+
+# Backend: the claude CLI.
+_ai_ask_claude() {
+  local query=$1 prompt=$2
   local out err rc=1 errfile
   if ! errfile=$(mktemp "${TMPDIR:-/tmp}/ai.XXXXXX"); then
     reply=("ai: could not create a temporary file")
     return 1
   fi
   {
-    # Runs in the current directory so the model knows where "here" is. --setting-sources ""
-    # keeps out all settings and CLAUDE.md files; no tools, no MCP, no session files.
-    # stderr goes to a file so CLI warnings never end up in the command.
+    # --setting-sources "" keeps out all settings and CLAUDE.md files; no tools, no MCP, no
+    # session files. stderr goes to a file so CLI warnings never end up in the command.
     out=$(claude -p \
-            --model "$AI_CMD_MODEL" \
+            --model "${AI_CMD_MODEL:-sonnet}" \
             --system-prompt "$prompt" \
             --output-format json \
             --json-schema "$_AI_CMD_SCHEMA" \
@@ -124,36 +188,116 @@ _ai_generate() {
     rm -f $errfile   # also on Ctrl-C
   }
 
-  # Parse the reply once: is_error, command, message, result as NUL-separated fields.
-  local parsed is_error cmd msg detail
-  if parsed=$(jq -j '[(.is_error | tostring), (.structured_output.command // ""),
-                      (.structured_output.message // ""), (.result // "" | tostring)]
-                     | join("\u0000")' <<<$out 2>/dev/null); then
-    local -a fields=( "${(@0)parsed}" )
-    is_error=$fields[1] cmd=$fields[2] msg=$fields[3] detail=$fields[4]
-  else
-    detail=$out   # not JSON, e.g. a plain-text CLI error
-  fi
-
+  local is_error detail
+  is_error=$(jq -r '.is_error | tostring' <<<$out 2>/dev/null)
+  detail=$(jq -r '.result // "" | tostring' <<<$out 2>/dev/null) || detail=$out   # not JSON, e.g. a plain-text CLI error
   if (( rc != 0 )) || [[ $is_error != false ]]; then
     reply=("ai: claude failed (exit $rc)${detail:+: $detail}" ${err:+"$err"})
     return 1
   fi
+  _ai_split_reply "$(jq -c '.structured_output // {}' <<<$out)"
+}
 
-  # A leading space would hide the command from history (HIST_IGNORE_SPACE).
-  cmd=${${cmd##[[:space:]]#}%%[[:space:]]#}
-
-  if [[ -z $cmd ]]; then
-    reply=("ai: ${msg:-empty response}")
+# Backend: an OpenAI-compatible chat completions API (Ollama, LM Studio, llama.cpp, vLLM, …).
+_ai_ask_openai() {
+  local query=$1 prompt=$2
+  local url=${${AI_CMD_URL:-http://localhost:11434/v1}%/}
+  if [[ -z $AI_CMD_MODEL ]]; then
+    reply=("ai: set AI_CMD_MODEL to the model to use, e.g. AI_CMD_MODEL=llama3.2")
     return 1
   fi
-  if [[ $cmd == *$'\n'* ]]; then
-    reply=("ai: expected one command line, got several; not inserting:" "$cmd")
+
+  local tmp
+  if ! tmp=$(mktemp -d "${TMPDIR:-/tmp}/ai.XXXXXX"); then
+    reply=("ai: could not create a temporary directory")
+    return 1
+  fi
+  local code rc=1 err body
+  {
+    # Ask for the reply as JSON matching the schema; servers that ignore this usually still
+    # follow the system prompt, and the reply is parsed leniently below.
+    jq -n --arg model "$AI_CMD_MODEL" --arg system "$prompt" --arg user "$query" \
+          --argjson schema "$_AI_CMD_SCHEMA" \
+          '{model: $model, stream: false,
+            messages: [{role: "system", content: $system}, {role: "user", content: $user}],
+            response_format: {type: "json_schema",
+                              json_schema: {name: "shell_command", strict: true, schema: $schema}}}' \
+          > $tmp/request
+    # The API key goes through a curl config on stdin, so it doesn't show up in `ps`.
+    code=$(curl -sS --connect-timeout 5 \
+                -H 'Content-Type: application/json' \
+                --data-binary @$tmp/request \
+                -o $tmp/response -w '%{http_code}' \
+                -K - \
+                -- "$url/chat/completions" \
+                <<<"${AI_CMD_API_KEY:+header = \"Authorization: Bearer $AI_CMD_API_KEY\"}" \
+                2>$tmp/error)
+    rc=$?
+    err=$(<$tmp/error)
+    [[ -f $tmp/response ]] && body=$(<$tmp/response)
+  } always {
+    rm -rf -- $tmp   # also on Ctrl-C
+  }
+
+  if (( rc == 7 )); then
+    reply=("ai: can't reach $url; is the server running? (Ollama: ollama serve)")
+    return 1
+  fi
+  if (( rc != 0 )); then
+    reply=("ai: curl failed (exit $rc)${err:+: $err}")
+    return 1
+  fi
+  if [[ $code != 2<-> ]]; then
+    # OpenAI-style {"error": {"message": …}} or Ollama-style {"error": "…"}.
+    local detail
+    detail=$(jq -r '.error | if type == "object" then .message else . end // empty' <<<$body 2>/dev/null) \
+      || detail=${body[1,300]}
+    reply=("ai: $url answered HTTP $code${detail:+: $detail}")
     return 1
   fi
 
-  REPLY=$cmd
-  reply=(${msg:+"$msg"})
+  local content
+  content=$(jq -r '.choices[0].message.content // empty' <<<$body 2>/dev/null)
+  # Reasoning models may think out loud first (some templates leave out the opening <think>),
+  # and some models wrap the JSON in a code fence or a sentence: keep the outermost { … }.
+  content=${content##*\<\/think\>}
+  [[ $content == *\{*\}* ]] && content="{${${content#*\{}%\}*}}"
+  if ! _ai_split_reply "$content"; then
+    reply=("ai: the model didn't reply with the expected JSON:" "${content:-(empty reply)}")
+    return 1
+  fi
+}
+
+# Does the command delete, overwrite or stop something? A local check that errs on the side of
+# warning; it doesn't look inside quotes or $(…) any more carefully than at the rest.
+_ai_risky() {
+  emulate -L zsh
+  setopt extended_glob
+  local cmd=$1 pattern i
+  # Where a command name can start: the line start, after ; & | ( ` or find -exec, and after
+  # prefixes such as sudo or xargs with their options. Then an optional path such as /bin/.
+  local start='(^|[;&|(`]|-exec(dir)?[[:space:]]|-ok[[:space:]])[[:space:]]*((sudo|doas|xargs|env|nohup|exec|command|time|nice)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)*([^[:space:]]*/)?'
+  local -a patterns=(
+    "${start}(rm|rmdir|unlink|shred|dd|mkfs[.[:alnum:]]*|truncate|wipefs|fdisk|diskutil|kill|pkill|killall|reboot|shutdown|halt)([[:space:]]|$)"
+    "${start}crontab[[:space:]]+-r"
+    "${start}sed[[:space:]]+(-[^[:space:]]+[[:space:]]+)*-i"
+    'git[[:space:]]+(reset[[:space:]]+--hard|clean[[:space:]]+-[[:alnum:]]*f|branch[[:space:]]+-D|push([[:space:]].*)?[[:space:]](--force|-f([[:space:]]|$)))'
+    '[[:space:]]-delete([[:space:]]|$)'
+    '(docker|podman)[[:space:]]+((container|image|volume|network|system)[[:space:]]+)?(rm|rmi|prune|kill|stop)([[:space:]]|$)'
+    'kubectl[[:space:]]+delete'
+  )
+  for pattern in $patterns; do
+    [[ $cmd =~ $pattern ]] && return 0
+  done
+
+  # A > redirect to a file (not >>, and not to /dev/null or another descriptor).
+  local -a words=( ${(z)cmd} )
+  for (( i = 1; i < $#words; i++ )); do
+    if [[ $words[i] == ([0-9]|\&|)\>(\||\!|) && $words[i+1] != (/dev/(null|stdout|stderr|tty)|\&*|[0-9]) ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Put the generated command on the next prompt, ready to edit or run.
