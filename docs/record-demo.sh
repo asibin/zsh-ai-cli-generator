@@ -25,6 +25,7 @@ trap cleanup EXIT
 # A minimal shell: no personal config, a plain prompt, and the plugin.
 mkdir -p $work/zdotdir
 cat > $work/zdotdir/.zshrc <<EOF
+unset AI_CMD_BACKEND AI_CMD_MODEL AI_CMD_URL AI_CMD_API_KEY AI_CMD_INSTRUCTIONS AI_CMD_KEY   # the defaults, whatever your shell exports
 source ${(q)repo}/ai.plugin.zsh
 cd ${(q)work}/demo
 EOF

@@ -166,6 +166,14 @@ openai_body $'<think>\nThe user wants files.\n</think>\n```json\n{"command": "ls
 _ai_generate 'x'; rc=$?
 expect 'think block and code fence stripped' 0 'ls' ''
 
+openai_body $'Thinking it over without an opening tag.\n</think>\n{"command": "ls", "message": ""}'
+_ai_generate 'x'; rc=$?
+expect 'think block without an opening tag' 0 'ls' ''
+
+openai_body 'Here is the command: {"command": "echo {}", "message": ""} Hope it helps!'
+_ai_generate 'x'; rc=$?
+expect 'JSON inside a sentence, braces in the command' 0 'echo {}' ''
+
 openai_body 'ls -la'
 _ai_generate 'x'; rc=$?
 expect 'reply that is not JSON' 1 '' "ai: the model didn't reply with the expected JSON:"

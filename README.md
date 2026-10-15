@@ -219,9 +219,9 @@ Things to know:
   model; later ones are quick.
 - `ai` asks for the reply as JSON in a fixed shape (`response_format` with a
   JSON schema). Servers that ignore that usually still follow the system
-  prompt, and `ai` strips code fences and `<think>` blocks around the JSON. If
-  a model keeps answering in prose, you'll see "the model didn't reply with the
-  expected JSON"; try another model.
+  prompt, and `ai` ignores `<think>` blocks, code fences and other text around
+  the JSON. If a model keeps answering in prose, you'll see "the model didn't
+  reply with the expected JSON"; try another model.
 
 ## How it works
 

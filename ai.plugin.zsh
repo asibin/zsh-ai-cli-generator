@@ -258,10 +258,10 @@ _ai_ask_openai() {
 
   local content
   content=$(jq -r '.choices[0].message.content // empty' <<<$body 2>/dev/null)
-  # Reasoning models may think out loud first, and some models wrap JSON in a code fence.
-  content=${content//\<think\>*\<\/think\>/}
-  content=${${content##[[:space:]]#}%%[[:space:]]#}
-  content=${${content##\`\`\`(json|)}%\`\`\`}
+  # Reasoning models may think out loud first (some templates leave out the opening <think>),
+  # and some models wrap the JSON in a code fence or a sentence: keep the outermost { … }.
+  content=${content##*\<\/think\>}
+  [[ $content == *\{*\}* ]] && content="{${${content#*\{}%\}*}}"
   if ! _ai_split_reply "$content"; then
     reply=("ai: the model didn't reply with the expected JSON:" "${content:-(empty reply)}")
     return 1
