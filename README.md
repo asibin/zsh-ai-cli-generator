@@ -1,5 +1,7 @@
 # zsh-ai-cli-generator
 
+[![tests](https://github.com/asibin/zsh-ai-cli-generator/actions/workflows/test.yml/badge.svg)](https://github.com/asibin/zsh-ai-cli-generator/actions/workflows/test.yml)
+
 Describe what you want in plain English and get a shell command back, ready to
 edit or run. Claude writes the command, or a model you run yourself through
 Ollama, LM Studio or any OpenAI-compatible server; nothing runs until you press
@@ -17,12 +19,13 @@ Enter. Type a request and press Ctrl-O, or run `ai <request>`.
 | [Claude Code](https://claude.com/claude-code) CLI (`claude`) | the default `claude` backend | see the link, then run `claude` once to log in |
 | `curl` | the `openai` backend ([local models](#local-and-other-models)) | preinstalled on macOS and most Linux distros |
 
-Only for re-recording the demo GIFs (see [Demo GIFs](#demo-gifs)):
+Only for the [tests](#tests) and re-recording the [demo GIFs](#demo-gifs):
 
-| Dependency | Install |
-| --- | --- |
-| `asciinema`, `agg` | `brew install asciinema agg` |
-| `expect`, `python3` | preinstalled on macOS; `sudo apt install expect python3` |
+| Dependency | Needed for | Install |
+| --- | --- | --- |
+| `expect` | the interactive tests, the demo GIFs | preinstalled on macOS; `sudo apt install expect` |
+| `asciinema`, `agg` | the demo GIFs | `brew install asciinema agg` |
+| `python3` | the demo GIFs (a server to find on port 3000) | preinstalled on macOS; `sudo apt install python3` |
 
 ## Install
 
@@ -239,7 +242,10 @@ a git repository, so it knows which folder "here" means.
 
 Either way, the reply is JSON with a `command` and a `message` field. If the
 model gave no warning, a local check looks for commands that delete, overwrite
-or stop something and adds one. The `ai` command pushes the command
+or stop something and adds one. A command with control characters, such as an
+escape sequence or a carriage return that could make it look like something
+else, is rejected, and control characters in messages are replaced before
+they're shown. The `ai` command pushes the command
 onto the next prompt with `print -z`; the key binding replaces the line you
 typed. Any message is shown next to it.
 
@@ -254,9 +260,19 @@ don't use apostrophes inside it.
 
 ## Tests
 
-`tests/run.zsh` runs the plugin against fake `claude` and `curl` commands, so
-it calls no model and needs nothing running. It covers both backends' requests,
-replies and errors, and the local warning check.
+```zsh
+tests/run.zsh
+```
+
+It runs the plugin against fake `claude` and `curl` commands, so it calls no
+model and needs nothing running. It covers both backends' requests, replies and
+errors, control characters, the local warning check, and the OS detection. With
+`expect` installed, it also drives a real interactive zsh to test the `ai`
+command, Ctrl-O, Ctrl-C and timeouts; `AI_TEST_LOG=<file>` saves that session
+for debugging.
+
+GitHub Actions runs the tests on macOS, Ubuntu and Alpine (BusyBox tools) for
+every push to `master` and every pull request.
 
 ## Demo GIFs
 

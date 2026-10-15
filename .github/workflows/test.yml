@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zsh, jq and expect
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh jq expect
+      - name: Check syntax
+        run: for f in ai.plugin.zsh tests/run.zsh docs/record-demo.sh; do zsh -n "$f"; done
+      - name: Run tests
+        run: AI_TEST_LOG=session.log zsh tests/run.zsh
+      - name: Upload the interactive session log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-${{ matrix.os }}
+          path: session.log
+
+  # Alpine has BusyBox tools instead of GNU ones, which the plugin detects.
+  alpine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests on Alpine
+        run: >
+          docker run --rm -v "$PWD:/src" -w /src alpine:3.20
+          sh -c 'apk add --no-cache zsh jq expect && zsh tests/run.zsh'

@@ -1,0 +1,99 @@
+# Drives an interactive zsh with the plugin loaded, to test what only a real terminal shows:
+# the ai command, the Ctrl-O key binding, Ctrl-C and timeouts. tests/run.zsh sets up the shell
+# (ZDOTDIR) and the fake claude (FAKE), runs this, and reads one "ok <name>" or "FAIL <name>"
+# line per check.
+
+log_user 0
+set timeout 10
+# AI_TEST_LOG=<file> saves the whole session, to see what went wrong.
+if {[info exists env(AI_TEST_LOG)]} { log_file -a -noappend $env(AI_TEST_LOG) }
+
+proc result {name ok} {
+  if {$ok} { puts "ok $name" } else { puts "FAIL $name" }
+}
+
+# Wait for a regular expression in the shell's output.
+proc check {name pattern} {
+  expect {
+    -re $pattern { result $name 1 }
+    timeout      { result $name 0 }
+  }
+}
+
+# Wait until the shell has run everything sent so far and shows the next prompt. The typed
+# text has "" in it, so only the output matches. Waiting for the prompt matters before sending
+# Ctrl-O or Ctrl-C: until the line editor is back, the terminal handles those keys itself
+# (on macOS, Ctrl-O discards output).
+set syncs 0
+proc sync {} {
+  global syncs
+  incr syncs
+  send "echo sy\"\"nc$syncs\r"
+  expect -re "sync$syncs\r"
+  expect "P> "
+}
+
+# Without the system-wide startup files: on Ubuntu, /etc/zsh/zshrc runs compinit, which can
+# stop to ask about insecure directories.
+spawn env TERM=xterm zsh --no-global-rcs -i
+expect {
+  "P> "   {}
+  timeout { result "the shell starts" 0; exit 1 }
+}
+
+# The ai command puts the command on the next prompt, and Enter runs it.
+send "ai list files\r"
+check "ai: the command is on the next prompt" {echo got: list files}
+send "\r"
+check "ai: Enter runs it" {[^ ]got: list files}
+sync
+
+# Ctrl-O replaces the request on the line. The redraw may change only part of the line, so
+# check the result by running it. In the patterns, [^ ]got: is the output, not the line
+# "echo got: …"; zsh may print an escape sequence instead of a newline before the output.
+send "widget test"
+send "\x0f"
+sleep 1
+send "\r"
+check "Ctrl-O: the request becomes the command" {[^ ]got: widget test}
+sync
+
+send "bindkey -M emacs '^O'\r"
+check "Ctrl-O is bound in emacs mode" {"\^O" ai-generate}
+sync
+
+# Ctrl-C while waiting stops claude. Some systems cancel the key binding (macOS), others let
+# it finish with "ai: cancelled" and keep the request on the line (Alpine): clear it.
+send "export FAKE_SLEEP=30\r"
+sync
+send "slow request"
+send "\x0f"
+sleep 1.5
+send "\x03"
+sleep 0.5
+send "\x15"
+send "echo \"pr\"\"ocs=\$(pgrep -f '$env(FAKE)/bin/claude' | wc -l | tr -d ' ')\"\r"
+expect {
+  -re {procs=([0-9]+)} {
+    set n $expect_out(1,string)
+    result "Ctrl-C: claude is stopped (running: $n)" [expr {$n == 0}]
+  }
+  timeout              { result "Ctrl-C: claude is stopped" 0 }
+}
+sync
+
+# A timeout stops claude without a "terminated" job message later.
+send "export FAKE_SLEEP=3\r"
+sync
+send "AI_CMD_TIMEOUT=1 ai slow request\r"
+check "timeout: message" {no reply from claude within 1s \(AI_CMD_TIMEOUT\)}
+sync
+send "jobs; echo jo\"\"bs-done\r"
+expect {
+  "terminated" { result "timeout: no job message" 0 }
+  "jobs-done"  { result "timeout: no job message" 1 }
+  timeout      { result "timeout: no job message" 0 }
+}
+
+send "exit\r"
+expect eof
