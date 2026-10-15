@@ -25,6 +25,7 @@
 #                  openai: required, e.g. llama3.2 for Ollama.
 #   AI_CMD_URL     openai only: the API base URL (default: http://localhost:11434/v1, Ollama).
 #   AI_CMD_API_KEY openai only: sent as a bearer token, for hosted services.
+#   AI_CMD_TIMEOUT seconds to wait for a reply (default: 60); 0 waits as long as it takes.
 #   AI_CMD_INSTRUCTIONS   extra instructions added to the system prompt, one per line, e.g.
 #                  'Use bat instead of cat.'
 #   All but AI_CMD_KEY are read on every request, so they can change any time.
@@ -89,8 +90,13 @@ _AI_CMD_SCHEMA='{"type":"object","properties":{"command":{"type":"string"},"mess
 _ai_generate() {
   emulate -L zsh
   setopt extended_glob
-  local query=$1 backend=${AI_CMD_BACKEND:-claude}
+  local query=$1 backend=${AI_CMD_BACKEND:-claude} timeout=${AI_CMD_TIMEOUT:-60}
   REPLY= reply=()
+
+  if [[ $timeout != <-> ]]; then
+    reply=("ai: AI_CMD_TIMEOUT must be a whole number of seconds (0 for no limit), not '$timeout'")
+    return 1
+  fi
 
   local -a deps=(jq)
   case $backend in
@@ -125,7 +131,7 @@ _ai_generate() {
     prompt+=$AI_CMD_INSTRUCTIONS
   fi
 
-  # The backend sets cmd and msg, or reply=(error lines) and returns 1.
+  # The backend sets cmd and msg, or reply=(error lines) and returns 1. It reads timeout too.
   local cmd msg
   _ai_ask_$backend "$query" "$prompt" || return 1
 
@@ -163,29 +169,55 @@ _ai_split_reply() {
 
 # Backend: the claude CLI.
 _ai_ask_claude() {
+  zmodload -F zsh/zselect b:zselect
   local query=$1 prompt=$2
-  local out err rc=1 errfile
-  if ! errfile=$(mktemp "${TMPDIR:-/tmp}/ai.XXXXXX"); then
-    reply=("ai: could not create a temporary file")
+  local out err rc=1 tmp
+  if ! tmp=$(mktemp -d "${TMPDIR:-/tmp}/ai.XXXXXX"); then
+    reply=("ai: could not create a temporary directory")
     return 1
   fi
   {
     # --setting-sources "" keeps out all settings and CLAUDE.md files; no tools, no MCP, no
-    # session files. stderr goes to a file so CLI warnings never end up in the command.
-    out=$(claude -p \
-            --model "${AI_CMD_MODEL:-sonnet}" \
-            --system-prompt "$prompt" \
-            --output-format json \
-            --json-schema "$_AI_CMD_SCHEMA" \
-            --tools "" \
-            --strict-mcp-config \
-            --setting-sources "" \
-            --no-session-persistence \
-            -- "$query" 2>$errfile)
+    # session files. Output goes to files, so CLI warnings never end up in the command, and
+    # a process claude leaves behind can't keep us waiting.
+    #
+    # The CLI has no timeout option and macOS has no timeout command, so claude runs in the
+    # background of this subshell, which stops it after $timeout seconds. The subshell isn't
+    # interactive, so zsh prints no job messages for it. Background jobs ignore Ctrl-C, so the
+    # trap passes it on. zselect -t waits in hundredths of a second, without a sleep process.
+    (
+      trap 'kill $pid 2>/dev/null; exit 130' INT TERM
+      claude -p \
+        --model "${AI_CMD_MODEL:-sonnet}" \
+        --system-prompt "$prompt" \
+        --output-format json \
+        --json-schema "$_AI_CMD_SCHEMA" \
+        --tools "" \
+        --strict-mcp-config \
+        --setting-sources "" \
+        --no-session-persistence \
+        -- "$query" >$tmp/out 2>$tmp/err &
+      pid=$!
+      integer ticks=0
+      while kill -0 $pid 2>/dev/null; do
+        if (( timeout && ticks >= timeout * 10 )); then
+          kill $pid 2>/dev/null
+          : > $tmp/timed-out
+          break
+        fi
+        zselect -t 10
+        (( ticks++ ))
+      done
+      wait $pid
+    )
     rc=$?
-    err=$(<$errfile)
+    out=$(<$tmp/out) err=$(<$tmp/err)
+    if [[ -e $tmp/timed-out ]]; then
+      reply=("ai: no reply from claude within ${timeout}s (AI_CMD_TIMEOUT)")
+      return 1
+    fi
   } always {
-    rm -f $errfile   # also on Ctrl-C
+    rm -rf -- $tmp   # also on Ctrl-C
   }
 
   local is_error detail
@@ -213,6 +245,8 @@ _ai_ask_openai() {
     return 1
   fi
   local code rc=1 err body
+  local -a limit=()
+  (( timeout )) && limit=(--max-time $timeout)
   {
     # Ask for the reply as JSON matching the schema; servers that ignore this usually still
     # follow the system prompt, and the reply is parsed leniently below.
@@ -224,7 +258,7 @@ _ai_ask_openai() {
                               json_schema: {name: "shell_command", strict: true, schema: $schema}}}' \
           > $tmp/request
     # The API key goes through a curl config on stdin, so it doesn't show up in `ps`.
-    code=$(curl -sS --connect-timeout 5 \
+    code=$(curl -sS --connect-timeout 5 $limit \
                 -H 'Content-Type: application/json' \
                 --data-binary @$tmp/request \
                 -o $tmp/response -w '%{http_code}' \
@@ -241,6 +275,10 @@ _ai_ask_openai() {
 
   if (( rc == 7 )); then
     reply=("ai: can't reach $url; is the server running? (Ollama: ollama serve)")
+    return 1
+  fi
+  if (( rc == 28 )); then
+    reply=("ai: no reply from $url within ${timeout}s (AI_CMD_TIMEOUT); loading a model the first time can take longer")
     return 1
   fi
   if (( rc != 0 )); then

@@ -13,9 +13,11 @@ trap 'rm -rf -- $fake' EXIT
 export FAKE=$fake
 
 mkdir $fake/bin
-# Records the model and system prompt, prints $FAKE_OUT, exits with $FAKE_RC.
+# Records the model and system prompt, waits $FAKE_SLEEP seconds, prints $FAKE_OUT, exits
+# with $FAKE_RC.
 cat > $fake/bin/claude <<'EOF'
 #!/usr/bin/env zsh
+[[ -n $FAKE_SLEEP ]] && sleep $FAKE_SLEEP
 while (( $# )); do
   case $1 in
     --model) print -r -- $2 > $FAKE/model; shift ;;
@@ -26,7 +28,7 @@ done
 print -r -- $FAKE_OUT
 exit ${FAKE_RC:-0}
 EOF
-# Records the request, URL and config (stdin), writes $FAKE_BODY to the -o file, prints
+# Records the request, URL, config (stdin) and --max-time, writes $FAKE_BODY to the -o file, prints
 # $FAKE_CODE as the HTTP status, exits with $FAKE_RC.
 cat > $fake/bin/curl <<'EOF'
 #!/usr/bin/env zsh
@@ -36,6 +38,7 @@ while (( $# )); do
     -o) out=$2; shift ;;
     --data-binary) cat ${2#@} > $FAKE/request; shift ;;
     -K) cat > $FAKE/config; shift ;;
+    --max-time) print -r -- $2 > $FAKE/max-time; shift ;;
     -H|-w|--connect-timeout) shift ;;
     --) print -r -- $2 > $FAKE/url; shift ;;
   esac
@@ -78,7 +81,7 @@ openai_body() {   # <message content>
   FAKE_BODY=$(jq -nc --arg c "$1" '{choices: [{message: {role: "assistant", content: $c}}]}')
 }
 
-export FAKE_OUT FAKE_RC FAKE_BODY FAKE_CODE
+export FAKE_OUT FAKE_RC FAKE_BODY FAKE_CODE FAKE_SLEEP
 integer rc
 
 print '# claude backend'
@@ -129,6 +132,21 @@ _ai_generate 'x'; rc=$?
 expect 'plain-text CLI error' 1 '' 'ai: claude failed (exit 1): Not logged in'
 FAKE_RC=0
 
+claude_out 'ls' ''; FAKE_SLEEP=3
+integer start=$SECONDS
+AI_CMD_TIMEOUT=1 _ai_generate 'slow'; rc=$?
+expect 'timeout' 1 '' 'ai: no reply from claude within 1s (AI_CMD_TIMEOUT)'
+(( SECONDS - start < 3 )) && pass 'timeout stops waiting' || fail 'timeout stops waiting' "took $(( SECONDS - start ))s"
+FAKE_SLEEP=1
+AI_CMD_TIMEOUT=0 _ai_generate 'slow'; rc=$?
+expect 'AI_CMD_TIMEOUT=0 waits' 0 'ls' ''
+AI_CMD_TIMEOUT=3 _ai_generate 'slow'; rc=$?
+expect 'reply within the timeout' 0 'ls' ''
+FAKE_SLEEP=
+
+AI_CMD_TIMEOUT=5s _ai_generate 'x'; rc=$?
+expect 'invalid AI_CMD_TIMEOUT' 1 '' "ai: AI_CMD_TIMEOUT must be a whole number of seconds (0 for no limit), not '5s'"
+
 cd $fake
 claude_out 'ls' ''
 _ai_generate 'x'; rc=$?
@@ -156,6 +174,7 @@ contains 'default URL is Ollama' $fake/url 'http://localhost:11434/v1/chat/compl
 [[ $(jq -r '.response_format.json_schema.schema.required | join(",")' $fake/request) == command,message ]] \
   && pass 'request: JSON schema' || fail 'request: JSON schema'
 [[ $(jq -r .stream $fake/request) == false ]] && pass 'request: no streaming' || fail 'request: no streaming'
+contains 'default timeout' $fake/max-time '60'
 [[ -z $(<$fake/config) ]] && pass 'no auth header without a key' || fail 'no auth header without a key' "$(<$fake/config)"
 
 AI_CMD_URL=https://example.com/api/v1/ AI_CMD_API_KEY=sk-test _ai_generate 'x'; rc=$?
@@ -197,6 +216,14 @@ expect 'OpenAI-style HTTP error' 1 '' 'ai: http://localhost:11434/v1 answered HT
 FAKE_BODY='Bad Gateway' FAKE_CODE=502
 _ai_generate 'x'; rc=$?
 expect 'HTTP error that is not JSON' 1 '' 'ai: http://localhost:11434/v1 answered HTTP 502: Bad Gateway'
+
+rm -f $fake/max-time
+AI_CMD_TIMEOUT=0 _ai_generate 'x'; rc=$?
+[[ ! -e $fake/max-time ]] && pass 'AI_CMD_TIMEOUT=0: no --max-time' || fail 'AI_CMD_TIMEOUT=0: no --max-time'
+
+FAKE_BODY= FAKE_CODE=000 FAKE_RC=28
+AI_CMD_TIMEOUT=7 _ai_generate 'x'; rc=$?
+expect 'timeout' 1 '' 'ai: no reply from http://localhost:11434/v1 within 7s (AI_CMD_TIMEOUT); loading a model the first time can take longer'
 
 FAKE_BODY= FAKE_CODE=000 FAKE_RC=7
 _ai_generate 'x'; rc=$?

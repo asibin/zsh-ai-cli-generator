@@ -162,6 +162,7 @@ With the `ai` command, quote the requests that contain `>` (see above).
 | `AI_CMD_MODEL` | `sonnet` with `claude`; none with `openai` | Model name: an alias for `claude --model` (e.g. `haiku`, `opus`), or the server's model name (e.g. `qwen2.5-coder:7b`), which `openai` requires |
 | `AI_CMD_URL` | `http://localhost:11434/v1` (Ollama) | `openai` only: the API base URL, up to and including `/v1` |
 | `AI_CMD_API_KEY` | — | `openai` only: sent as a bearer token, for hosted services |
+| `AI_CMD_TIMEOUT` | `60` | Seconds to wait for a reply before giving up; `0` waits as long as it takes |
 | `AI_CMD_KEY` | `^O` | Key that runs the widget, in the emacs and viins keymaps. The default replaces `accept-line-and-down-history`. Set it to `''` for no key binding (only the `ai` command) |
 | `AI_CMD_INSTRUCTIONS` | — | Your own instructions, added to the end of the system prompt. Use one line per instruction |
 
@@ -216,7 +217,8 @@ Things to know:
   something nobody asked. Larger models, and models trained for code, do
   better. Read the command before pressing Enter, as always.
 - **The first request after a while is slow** while the server loads the
-  model; later ones are quick.
+  model; later ones are quick. If a large model takes longer than a minute to
+  load, raise `AI_CMD_TIMEOUT`.
 - `ai` asks for the reply as JSON in a fixed shape (`response_format` with a
   JSON schema). Servers that ignore that usually still follow the system
   prompt, and `ai` ignores `<think>` blocks, code fences and other text around
