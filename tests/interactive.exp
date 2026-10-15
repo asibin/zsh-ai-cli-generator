@@ -33,7 +33,9 @@ proc sync {} {
   expect "P> "
 }
 
-spawn env TERM=xterm zsh -i
+# Without the system-wide startup files: on Ubuntu, /etc/zsh/zshrc runs compinit, which can
+# stop to ask about insecure directories.
+spawn env TERM=xterm zsh --no-global-rcs -i
 expect {
   "P> "   {}
   timeout { result "the shell starts" 0; exit 1 }
